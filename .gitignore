@@ -1,0 +1,29 @@
+# Rust
+/target/
+/flutter_gen_platforms/target/
+**/*.rs.bk
+Cargo.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/rust-project.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,6 @@
+{
+  "rust-analyzer.linkedProjects": [
+    ".vscode/rust-project.json",
+    "flutter_gen_platforms/Cargo.toml"
+  ]
+}

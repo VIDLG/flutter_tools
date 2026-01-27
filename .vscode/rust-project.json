@@ -1,0 +1,20 @@
+{
+  "sysroot_src": null,
+  "crates": [
+    {
+      "root_module": "flutter_select_device.rs",
+      "edition": "2021",
+      "deps": []
+    },
+    {
+      "root_module": "kill_file_handles.rs",
+      "edition": "2021",
+      "deps": []
+    },
+    {
+      "root_module": "cmd_run.rs",
+      "edition": "2021",
+      "deps": []
+    }
+  ]
+}
