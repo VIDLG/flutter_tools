@@ -59,7 +59,7 @@ fn main() -> Result<()> {
         }
     }
 
-    // Set output_file_name if version is available
+    // Set output_file_name if not already configured (backward compatibility)
     if cfg.android.app.build.output_file_name.is_none() {
         if let Some(version) = &cfg.version {
             let pattern = cfg
