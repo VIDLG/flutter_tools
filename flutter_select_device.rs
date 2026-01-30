@@ -34,6 +34,7 @@ use std::process::Command;
 #[allow(non_snake_case)]
 struct Device {
     id: String,
+    #[allow(dead_code)]
     name: String,
     targetPlatform: String,
 }
