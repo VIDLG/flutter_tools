@@ -43,6 +43,10 @@ struct Args {
     /// Use `v` to create tags like `v1.2.3`, or `none` to create `1.2.3`.
     #[arg(long, value_enum, default_value = "v")]
     tag_prefix: TagPrefix,
+
+    /// Force recreate tag even if it already exists
+    #[arg(short = 'f', long)]
+    force: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
@@ -145,19 +149,31 @@ fn main() -> Result<()> {
 
     // If either convention exists, do nothing or maybe just report it.
     if tag_exists(&repo, &tag_plain)? {
-        println!("[tag-version] Tag '{}' already exists.", tag_plain);
-        if preferred_tag == tag_v && !tag_exists(&repo, &tag_v)? {
-             println!("[tag-version] Note: '{}' exists but you asked for prefix 'v'. Skipping to avoid duplicates.", tag_plain);
+        if args.force {
+            println!("[tag-version] Tag '{}' already exists. Force deleting...", tag_plain);
+            let tag_ref = format!("refs/tags/{}", tag_plain);
+            repo.refs.delete_reference(tag_ref)?;
+        } else {
+            println!("[tag-version] Tag '{}' already exists.", tag_plain);
+            if preferred_tag == tag_v && !tag_exists(&repo, &tag_v)? {
+                 println!("[tag-version] Note: '{}' exists but you asked for prefix 'v'. Skipping to avoid duplicates.", tag_plain);
+            }
+            return Ok(());
         }
-        return Ok(());
     }
     
     if tag_exists(&repo, &tag_v)? {
-        println!("[tag-version] Tag '{}' already exists.", tag_v);
-         if preferred_tag == tag_plain {
-             println!("[tag-version] Note: '{}' exists but you asked for 'none'. Skipping.", tag_v);
+        if args.force {
+            println!("[tag-version] Tag '{}' already exists. Force deleting...", tag_v);
+            let tag_ref = format!("refs/tags/{}", tag_v);
+            repo.refs.delete_reference(tag_ref)?;
+        } else {
+            println!("[tag-version] Tag '{}' already exists.", tag_v);
+             if preferred_tag == tag_plain {
+                 println!("[tag-version] Note: '{}' exists but you asked for 'none'. Skipping.", tag_v);
+            }
+            return Ok(());
         }
-        return Ok(());
     }
 
     let head_id = match repo.head_id() {
@@ -168,7 +184,13 @@ fn main() -> Result<()> {
         }
     };
 
-    repo.tag_reference(&preferred_tag, head_id, PreviousValue::MustNotExist)
+    let tag_creation_result = if args.force {
+        repo.tag_reference(&preferred_tag, head_id, PreviousValue::Any)
+    } else {
+        repo.tag_reference(&preferred_tag, head_id, PreviousValue::MustNotExist)
+    };
+
+    tag_creation_result
         .with_context(|| format!("Failed to create lightweight tag '{preferred_tag}'"))?;
     
     println!(
