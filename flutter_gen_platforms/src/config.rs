@@ -189,9 +189,9 @@ pub fn expand_config(cfg: &mut Config) -> Result<()> {
 fn expand_android_config(cfg: &mut AndroidConfig) -> Result<()> {
     cfg.app.build.namespace = expand_env_vars(&cfg.app.build.namespace)?;
     cfg.app.build.application_id = expand_env_vars(&cfg.app.build.application_id)?;
-    if let Some(value) = cfg.app.build.output_file_name.as_ref() {
-        cfg.app.build.output_file_name = Some(expand_env_vars(value)?);
-    }
+    // if let Some(value) = cfg.app.build.output_file_name.as_ref() {
+    //     cfg.app.build.output_file_name = Some(expand_env_vars(value)?);
+    // }
     if let Some(value) = cfg.gradle_wrapper.distribution_url.as_ref() {
         cfg.gradle_wrapper.distribution_url = Some(expand_env_vars(value)?);
     }
