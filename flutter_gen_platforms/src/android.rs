@@ -50,6 +50,33 @@ fn copy_manifest_templates(project_dir: &Path, android_dir: &Path, templates_dir
             .with_context(|| format!("Failed to copy {} -> {}", src.display(), dst.display()))?;
     }
 
+    // Copy extra resource files (e.g. res/xml/file_paths.xml) if present.
+    let res_src = src_dir.join("res");
+    if res_src.is_dir() {
+        let res_dst = android_dir.join("app/src/main/res");
+        copy_dir_recursive(&res_src, &res_dst)
+            .with_context(|| format!("Failed to copy resource dir: {}", res_src.display()))?;
+    }
+
+    Ok(())
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
+    fs::create_dir_all(dst)
+        .with_context(|| format!("Failed to create dir: {}", dst.display()))?;
+    for entry in fs::read_dir(src)
+        .with_context(|| format!("Failed to read dir: {}", src.display()))?
+    {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            fs::copy(&src_path, &dst_path)
+                .with_context(|| format!("Failed to copy {} -> {}", src_path.display(), dst_path.display()))?;
+        }
+    }
     Ok(())
 }
 
