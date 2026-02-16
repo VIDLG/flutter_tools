@@ -8,13 +8,14 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use std::path::{Path, PathBuf};
 
-use config::{expand_config, load_config};
-use utils::{
-    remove_dir_all_with_retry, resolve_cmd, run_flutter_create,
-};
+use config::{build_template_vars, expand_config, load_config};
+use utils::{remove_dir_all_with_retry, resolve_cmd, run_flutter_create};
 
 #[derive(Parser, Debug)]
-#[command(name = "flutter-gen-platform", about = "Generate Flutter platform directories")]
+#[command(
+    name = "flutter-gen-platform",
+    about = "Generate Flutter platform directories"
+)]
 struct Args {
     #[arg(long, value_name = "FILE", default_value = "app.pkl")]
     config: PathBuf,
@@ -59,22 +60,6 @@ fn main() -> Result<()> {
         }
     }
 
-    // Set output_file_name if not already configured (backward compatibility)
-    if cfg.android.app.build.output_file_name.is_none() {
-        if let Some(version) = &cfg.version {
-            let pattern = cfg
-                .output_file_name_pattern
-                .as_deref()
-                .unwrap_or("{project_name}-v{version}-${name}.apk");
-
-            let output_pattern = pattern
-                .replace("{version}", version)
-                .replace("{project_name}", &cfg.project_name);
-
-            cfg.android.app.build.output_file_name = Some(output_pattern);
-        }
-    }
-
     expand_config(&mut cfg)?;
 
     // Determine which platforms to process based on config
@@ -93,7 +78,10 @@ fn main() -> Result<()> {
         let android_dir = project_dir.join("android");
         if android_dir.exists() {
             if dry_run {
-                println!("[DRY RUN] Would remove directory: {}", android_dir.display());
+                println!(
+                    "[DRY RUN] Would remove directory: {}",
+                    android_dir.display()
+                );
             } else {
                 remove_dir_all_with_retry(&android_dir)?;
             }
@@ -115,7 +103,10 @@ fn main() -> Result<()> {
         let windows_dir = project_dir.join("windows");
         if windows_dir.exists() {
             if dry_run {
-                println!("[DRY RUN] Would remove directory: {}", windows_dir.display());
+                println!(
+                    "[DRY RUN] Would remove directory: {}",
+                    windows_dir.display()
+                );
             } else {
                 remove_dir_all_with_retry(&windows_dir)?;
             }
@@ -155,14 +146,23 @@ fn main() -> Result<()> {
                 android_dir.display()
             );
         }
-        android::process_android_platform(&project_dir, &cfg.android, cfg.platforms_dir.as_deref())?;
+        let template_vars = build_template_vars(&cfg);
+        android::process_android_platform(
+            &project_dir,
+            &cfg.android,
+            cfg.platforms_dir.as_deref(),
+            &template_vars,
+        )?;
     }
 
     // Process Web platform
     if process_web {
         let web_dir = project_dir.join("web");
         if !web_dir.exists() {
-            bail!("Generated web directory not found at: {}", web_dir.display());
+            bail!(
+                "Generated web directory not found at: {}",
+                web_dir.display()
+            );
         }
         web::process_web_platform(&project_dir)?;
     }
@@ -171,7 +171,10 @@ fn main() -> Result<()> {
     if process_windows {
         let windows_dir = project_dir.join("windows");
         if !windows_dir.exists() {
-            bail!("Generated windows directory not found at: {}", windows_dir.display());
+            bail!(
+                "Generated windows directory not found at: {}",
+                windows_dir.display()
+            );
         }
         if let Some(windows_config) = &cfg.windows {
             windows::process_windows_platform(&project_dir, windows_config)?;

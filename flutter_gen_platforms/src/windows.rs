@@ -18,26 +18,30 @@ pub fn process_windows_platform(project_dir: &Path, config: &WindowsConfig) -> R
     if let (Some(width), Some(height)) = (config.window_width, config.window_height) {
         let main_cpp_path = windows_dir.join("runner").join("main.cpp");
         if main_cpp_path.exists() {
-            let content = fs::read_to_string(&main_cpp_path)
-                .context("Failed to read main.cpp")?;
-            
+            let content = fs::read_to_string(&main_cpp_path).context("Failed to read main.cpp")?;
+
             // Replace the window size line
             let updated_content = content
                 .lines()
                 .map(|line| {
                     if line.contains("Win32Window::Size size(") {
-                        format!("  Win32Window::Size size({}, {});  // Configured window size", width, height)
+                        format!(
+                            "  Win32Window::Size size({}, {});  // Configured window size",
+                            width, height
+                        )
                     } else {
                         line.to_string()
                     }
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
-            
-            fs::write(&main_cpp_path, updated_content)
-                .context("Failed to write main.cpp")?;
-            
-            println!("✓ Windows main.cpp updated with window size {}x{}", width, height);
+
+            fs::write(&main_cpp_path, updated_content).context("Failed to write main.cpp")?;
+
+            println!(
+                "✓ Windows main.cpp updated with window size {}x{}",
+                width, height
+            );
         }
     }
 

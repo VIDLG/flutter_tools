@@ -5,220 +5,78 @@ use std::path::Path;
 
 use crate::config::AndroidConfig;
 
-fn copy_manifest_templates(project_dir: &Path, android_dir: &Path, templates_dir: &Path) -> Result<()> {
-    let src_dir = project_dir.join(templates_dir);
-    if !src_dir.exists() {
-        anyhow::bail!(
-            "Android manifest templates directory not found: {}",
-            src_dir.display()
-        );
-    }
+/// Files to skip when copying from platforms/android/ to android/.
+const SKIP_FILES: &[&str] = &["keystore.jks", "key.properties.example"];
 
-    let main_src = src_dir.join("AndroidManifest.main.xml");
-    if !main_src.exists() {
-        anyhow::bail!(
-            "Missing required manifest template: {}",
-            main_src.display()
-        );
-    }
+/// File extensions that support `{{var}}` template substitution.
+const TEMPLATE_EXTENSIONS: &[&str] = &["kts", "xml", "properties"];
 
-    let mappings = [
-        (
-            src_dir.join("AndroidManifest.main.xml"),
-            android_dir.join("app/src/main/AndroidManifest.xml"),
-        ),
-        (
-            src_dir.join("AndroidManifest.debug.xml"),
-            android_dir.join("app/src/debug/AndroidManifest.xml"),
-        ),
-        (
-            src_dir.join("AndroidManifest.profile.xml"),
-            android_dir.join("app/src/profile/AndroidManifest.xml"),
-        ),
-    ];
+/// Recursively copy files from `src` to `dst`, applying `{{var}}` template
+/// substitution on supported file types. Files listed in `SKIP_FILES` are
+/// not copied.
+fn copy_with_templates(src: &Path, dst: &Path, vars: &HashMap<String, String>) -> Result<()> {
+    fs::create_dir_all(dst).with_context(|| format!("Failed to create dir: {}", dst.display()))?;
 
-    for (src, dst) in mappings {
-        // debug/profile templates are optional; main is validated above.
-        if !src.exists() {
-            continue;
-        }
-        if let Some(parent) = dst.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create dir: {}", parent.display()))?;
-        }
-        fs::copy(&src, &dst)
-            .with_context(|| format!("Failed to copy {} -> {}", src.display(), dst.display()))?;
-    }
-
-    // Copy extra resource files (e.g. res/xml/file_paths.xml) if present.
-    let res_src = src_dir.join("res");
-    if res_src.is_dir() {
-        let res_dst = android_dir.join("app/src/main/res");
-        copy_dir_recursive(&res_src, &res_dst)
-            .with_context(|| format!("Failed to copy resource dir: {}", res_src.display()))?;
-    }
-
-    Ok(())
-}
-
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
-    fs::create_dir_all(dst)
-        .with_context(|| format!("Failed to create dir: {}", dst.display()))?;
-    for entry in fs::read_dir(src)
-        .with_context(|| format!("Failed to read dir: {}", src.display()))?
+    for entry in
+        fs::read_dir(src).with_context(|| format!("Failed to read dir: {}", src.display()))?
     {
         let entry = entry?;
         let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
+        let file_name = entry.file_name();
+        let dst_path = dst.join(&file_name);
+
         if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
+            copy_with_templates(&src_path, &dst_path, vars)?;
+            continue;
+        }
+
+        // Skip non-copyable files
+        let name = file_name.to_string_lossy();
+        if SKIP_FILES.iter().any(|s| *s == name.as_ref()) {
+            continue;
+        }
+
+        // Check if this file type supports template substitution
+        let is_template = src_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| TEMPLATE_EXTENSIONS.iter().any(|t| *t == ext))
+            .unwrap_or(false);
+
+        if is_template && !vars.is_empty() {
+            let content = fs::read_to_string(&src_path)
+                .with_context(|| format!("Failed to read: {}", src_path.display()))?;
+            let rendered = apply_template(&content, vars);
+            if let Some(parent) = dst_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&dst_path, rendered)
+                .with_context(|| format!("Failed to write: {}", dst_path.display()))?;
         } else {
-            fs::copy(&src_path, &dst_path)
-                .with_context(|| format!("Failed to copy {} -> {}", src_path.display(), dst_path.display()))?;
+            if let Some(parent) = dst_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(&src_path, &dst_path).with_context(|| {
+                format!(
+                    "Failed to copy {} -> {}",
+                    src_path.display(),
+                    dst_path.display()
+                )
+            })?;
         }
     }
+
     Ok(())
 }
 
-pub fn apply_repositories(path: &Path, repos: &[String]) -> Result<()> {
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read file: {}", path.display()))?;
-    let lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
-
-    let mut out = Vec::new();
-    let mut in_repos = false;
-    let mut inserted = false;
-
-    for line in &lines {
-        out.push(line.clone());
-        if line.trim() == "repositories {" && !inserted {
-            in_repos = true;
-            for repo in repos {
-                let insert = format!("        maven {{ url = uri(\"{}\") }}", repo);
-                out.push(insert);
-            }
-            inserted = true;
-        } else if in_repos && line.trim() == "}" {
-            in_repos = false;
-        }
+/// Replace all `{{key}}` occurrences in `content` with values from `vars`.
+fn apply_template(content: &str, vars: &HashMap<String, String>) -> String {
+    let mut result = content.to_string();
+    for (key, value) in vars {
+        let placeholder = format!("{{{{{}}}}}", key); // {{key}}
+        result = result.replace(&placeholder, value);
     }
-
-    fs::write(path, out.join("\n") + "\n")
-        .with_context(|| format!("Failed to write file: {}", path.display()))?;
-    Ok(())
-}
-
-pub fn apply_plugin_repositories(path: &Path, repos: &[String]) -> Result<()> {
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read file: {}", path.display()))?;
-    let mut out = Vec::new();
-    let mut in_plugin_repos = false;
-    let mut inserted = false;
-
-    for line in content.lines() {
-        out.push(line.to_string());
-        if line.trim() == "repositories {" && !inserted {
-            in_plugin_repos = true;
-            for repo in repos {
-                let insert = format!("        maven {{ url = uri(\"{}\") }}", repo);
-                out.push(insert);
-            }
-            inserted = true;
-        } else if in_plugin_repos && line.trim() == "}" {
-            in_plugin_repos = false;
-        }
-    }
-
-    fs::write(path, out.join("\n") + "\n")
-        .with_context(|| format!("Failed to write file: {}", path.display()))?;
-    Ok(())
-}
-
-pub fn apply_app_gradle(
-    path: &Path,
-    namespace: &str,
-    application_id: &str,
-    output_file_name: Option<&str>,
-    abi_filters: Option<&[String]>,
-    kotlin_incremental: Option<bool>,
-) -> Result<()> {
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read file: {}", path.display()))?;
-    let mut out = Vec::new();
-    let mut in_build_types = false;
-    let mut in_default_config = false;
-    let mut in_kotlin_options = false;
-    let mut added_output_config = false;
-    let mut added_abi_filters = false;
-    let mut added_kotlin_incremental = false;
-
-    for line in content.lines() {
-        if line.trim_start().starts_with("namespace = ") {
-            out.push(format!("    namespace = \"{}\"", namespace));
-        } else if line.trim_start().starts_with("applicationId = ") {
-            out.push(format!("        applicationId = \"{}\"", application_id));
-        } else {
-            out.push(line.to_string());
-        }
-
-        if line.trim().starts_with("kotlinOptions {") {
-            in_kotlin_options = true;
-        }
-
-        if in_kotlin_options && line.trim() == "}" && !added_kotlin_incremental {
-            in_kotlin_options = false;
-            if let Some(false) = kotlin_incremental {
-                out.push(String::new());
-                out.push(
-                    "    // Disable Kotlin incremental compilation to avoid cross-drive path issues"
-                        .to_string(),
-                );
-                out.push("    tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {".to_string());
-                out.push("        incremental = false".to_string());
-                out.push("    }".to_string());
-                added_kotlin_incremental = true;
-            }
-        }
-
-        if line.trim().starts_with("defaultConfig {") {
-            in_default_config = true;
-        }
-
-        if in_default_config && line.trim() == "}" && !added_abi_filters {
-            if let Some(abis) = abi_filters {
-                if !abis.is_empty() {
-                    out.insert(out.len() - 1, format!("        ndk {{"));
-                    for abi in abis {
-                        out.insert(out.len() - 1, format!("            abiFilters.add(\"{}\")", abi));
-                    }
-                    out.insert(out.len() - 1, format!("        }}"));
-                }
-            }
-            in_default_config = false;
-            added_abi_filters = true;
-        }
-
-        if line.trim().starts_with("buildTypes {") {
-            in_build_types = true;
-        }
-
-        if in_build_types && line.trim() == "}" && !added_output_config {
-            in_build_types = false;
-            if let Some(filename_pattern) = output_file_name {
-                out.push(String::new());
-                out.push("    applicationVariants.all {".to_string());
-                out.push("        outputs.all {".to_string());
-                out.push("            val output = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl".to_string());
-                out.push(format!("            output.outputFileName = \"{}\"", filename_pattern));
-                out.push("        }".to_string());
-                out.push("    }".to_string());
-                added_output_config = true;
-            }
-        }
-    }
-    fs::write(path, out.join("\n") + "\n")
-        .with_context(|| format!("Failed to write file: {}", path.display()))?;
-    Ok(())
+    result
 }
 
 pub fn apply_gradle_wrapper_properties(path: &Path, distribution_url: &str) -> Result<()> {
@@ -232,8 +90,8 @@ fn read_properties(path: &Path) -> Result<HashMap<String, String>> {
     if !path.exists() {
         return Ok(HashMap::new());
     }
-    let file = fs::File::open(path)
-        .with_context(|| format!("Failed to read file: {}", path.display()))?;
+    let file =
+        fs::File::open(path).with_context(|| format!("Failed to read file: {}", path.display()))?;
     let props = java_properties::read(std::io::BufReader::new(file))
         .with_context(|| format!("Failed to parse properties: {}", path.display()))?;
     Ok(props)
@@ -251,6 +109,7 @@ pub fn process_android_platform(
     project_dir: &Path,
     config: &AndroidConfig,
     platforms_dir: Option<&str>,
+    template_vars: &HashMap<String, String>,
 ) -> Result<()> {
     let android_dir = project_dir.join("android");
 
@@ -258,26 +117,19 @@ pub fn process_android_platform(
         .map(|v| v.trim())
         .filter(|v| !v.is_empty())
         .unwrap_or("platforms");
-    let templates_dir = std::path::PathBuf::from(platforms_root).join("android");
-    copy_manifest_templates(project_dir, &android_dir, &templates_dir)?;
+    let src_dir = project_dir.join(platforms_root).join("android");
 
-    apply_repositories(
-        &android_dir.join("build.gradle.kts"),
-        &config.build.allprojects.repositories,
-    )?;
-    apply_plugin_repositories(
-        &android_dir.join("settings.gradle.kts"),
-        &config.settings.plugin_management.repositories,
-    )?;
-    apply_app_gradle(
-        &android_dir.join("app/build.gradle.kts"),
-        &config.app.build.namespace,
-        &config.app.build.application_id,
-        config.app.build.output_file_name.as_deref(),
-        config.app.build.abi_filters.as_deref(),
-        config.app.build.kotlin_incremental,
-    )?;
-    // Manifests are fully driven by template files under platforms/android.
+    if !src_dir.exists() {
+        anyhow::bail!(
+            "Android platform templates directory not found: {}",
+            src_dir.display()
+        );
+    }
+
+    // Recursively copy platforms/android/ → android/, applying {{var}} substitution
+    copy_with_templates(&src_dir, &android_dir, template_vars)?;
+
+    // Apply gradle wrapper distribution URL if configured
     if let Some(distribution_url) = &config.gradle_wrapper.distribution_url {
         apply_gradle_wrapper_properties(
             &android_dir.join("gradle/wrapper/gradle-wrapper.properties"),

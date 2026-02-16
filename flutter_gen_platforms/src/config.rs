@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
-use std::env;
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -17,8 +17,6 @@ pub struct Config {
     #[serde(default)]
     pub version: Option<String>,
     #[serde(default)]
-    pub output_file_name_pattern: Option<String>,
-    #[serde(default)]
     pub pubspec: Option<PubspecConfig>,
     #[serde(default)]
     pub platforms_dir: Option<String>,
@@ -30,6 +28,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Deserialize, Default)]
+#[allow(dead_code)]
 pub struct PubspecConfig {
     #[serde(default)]
     pub name: Option<String>,
@@ -56,45 +55,26 @@ pub struct AndroidConfig {
     #[serde(default)]
     pub gradle_wrapper: AndroidGradleWrapperConfig,
     #[serde(default)]
-    pub app: AndroidAppConfig,
-    pub build: AndroidBuildConfig,
+    pub template_vars: AndroidTemplateVars,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct AndroidTemplateVars {
     #[serde(default)]
-    pub settings: AndroidSettingsConfig,
-}
-
-#[derive(Debug, Deserialize, Default)]
-pub struct AndroidBuildConfig {
-    pub allprojects: RepositoryList,
-}
-
-#[derive(Debug, Deserialize, Default)]
-pub struct AndroidSettingsConfig {
-    pub plugin_management: RepositoryList,
+    pub namespace: Option<String>,
+    #[serde(default)]
+    pub application_id: Option<String>,
+    #[serde(default)]
+    pub output_file_name: Option<String>,
+    #[serde(default)]
+    pub key_alias: Option<String>,
+    #[serde(default)]
+    pub store_file: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
 pub struct AndroidGradleWrapperConfig {
     pub distribution_url: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Default)]
-pub struct AndroidAppConfig {
-    #[serde(default)]
-    pub build: AndroidAppBuildConfig,
-}
-
-#[derive(Debug, Deserialize, Default)]
-pub struct AndroidAppBuildConfig {
-    #[serde(default)]
-    pub namespace: String,
-    #[serde(default)]
-    pub application_id: String,
-    #[serde(default)]
-    pub output_file_name: Option<String>,
-    #[serde(default)]
-    pub abi_filters: Option<Vec<String>>,
-    #[serde(default)]
-    pub kotlin_incremental: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -110,11 +90,6 @@ pub struct WindowsConfig {
     pub window_width: Option<u32>,
     #[serde(default)]
     pub window_height: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, Default)]
-pub struct RepositoryList {
-    pub repositories: Vec<String>,
 }
 
 pub fn load_config(path: &Path) -> Result<Config> {
@@ -171,44 +146,37 @@ pub fn expand_config(cfg: &mut Config) -> Result<()> {
         cfg.platforms_dir = Some(expand_env_vars(value)?);
     }
     expand_flutter_create_config(&mut cfg.create)?;
-    expand_android_config(&mut cfg.android)?;
-    if cfg.android.app.build.application_id.trim().is_empty() {
-        if let Some(org) = cfg.org.as_ref().map(|value| value.trim()).filter(|v| !v.is_empty()) {
+
+    // Derive application_id from org + project_name if not set
+    if cfg
+        .android
+        .template_vars
+        .application_id
+        .as_deref()
+        .map_or(true, |s| s.trim().is_empty())
+    {
+        if let Some(org) = cfg.org.as_ref().map(|v| v.trim()).filter(|v| !v.is_empty()) {
             let org = org.trim_end_matches('.');
-            cfg.android.app.build.application_id = format!("{}.{}", org, cfg.project_name);
+            cfg.android.template_vars.application_id =
+                Some(format!("{}.{}", org, cfg.project_name));
         } else {
-            bail!("android.app.build.application_id is required when org is not set");
+            bail!("android.template_vars.application_id is required when org is not set");
         }
     }
-    if cfg.android.app.build.namespace.trim().is_empty() {
-        cfg.android.app.build.namespace = cfg.android.app.build.application_id.clone();
+    if cfg
+        .android
+        .template_vars
+        .namespace
+        .as_deref()
+        .map_or(true, |s| s.trim().is_empty())
+    {
+        cfg.android.template_vars.namespace = cfg.android.template_vars.application_id.clone();
     }
-    Ok(())
-}
 
-fn expand_android_config(cfg: &mut AndroidConfig) -> Result<()> {
-    cfg.app.build.namespace = expand_env_vars(&cfg.app.build.namespace)?;
-    cfg.app.build.application_id = expand_env_vars(&cfg.app.build.application_id)?;
-    // if let Some(value) = cfg.app.build.output_file_name.as_ref() {
-    //     cfg.app.build.output_file_name = Some(expand_env_vars(value)?);
-    // }
-    if let Some(value) = cfg.gradle_wrapper.distribution_url.as_ref() {
-        cfg.gradle_wrapper.distribution_url = Some(expand_env_vars(value)?);
+    if let Some(value) = cfg.android.gradle_wrapper.distribution_url.as_ref() {
+        cfg.android.gradle_wrapper.distribution_url = Some(expand_env_vars(value)?);
     }
-    cfg.build.allprojects.repositories = cfg
-        .build
-        .allprojects
-        .repositories
-        .iter()
-        .map(|value| expand_env_vars(value))
-        .collect::<Result<Vec<_>>>()?;
-    cfg.settings.plugin_management.repositories = cfg
-        .settings
-        .plugin_management
-        .repositories
-        .iter()
-        .map(|value| expand_env_vars(value))
-        .collect::<Result<Vec<_>>>()?;
+
     Ok(())
 }
 
@@ -242,23 +210,21 @@ fn expand_env_vars(input: &str) -> Result<String> {
                     bail!("Unclosed env var in config value: {input}");
                 }
                 let key: String = chars[i + 2..end].iter().collect();
-                let value = env::var(&key)
-                    .with_context(|| format!("Missing env var: {key}"))?;
+                let value =
+                    std::env::var(&key).with_context(|| format!("Missing env var: {key}"))?;
                 out.push_str(&value);
                 i = end + 1;
                 continue;
             }
 
             let mut end = i + 1;
-            while end < chars.len()
-                && (chars[end].is_ascii_alphanumeric() || chars[end] == '_')
-            {
+            while end < chars.len() && (chars[end].is_ascii_alphanumeric() || chars[end] == '_') {
                 end += 1;
             }
             if end > i + 1 {
                 let key: String = chars[i + 1..end].iter().collect();
-                let value = env::var(&key)
-                    .with_context(|| format!("Missing env var: {key}"))?;
+                let value =
+                    std::env::var(&key).with_context(|| format!("Missing env var: {key}"))?;
                 out.push_str(&value);
                 i = end;
                 continue;
@@ -268,6 +234,28 @@ fn expand_env_vars(input: &str) -> Result<String> {
         i += 1;
     }
     Ok(out)
+}
+
+/// Build a map of `{{key}}` → value for template substitution.
+pub fn build_template_vars(cfg: &Config) -> HashMap<String, String> {
+    let mut vars = HashMap::new();
+    let tv = &cfg.android.template_vars;
+    if let Some(v) = &tv.namespace {
+        vars.insert("namespace".to_string(), v.clone());
+    }
+    if let Some(v) = &tv.application_id {
+        vars.insert("application_id".to_string(), v.clone());
+    }
+    if let Some(v) = &tv.output_file_name {
+        vars.insert("output_file_name".to_string(), v.clone());
+    }
+    if let Some(v) = &tv.key_alias {
+        vars.insert("key_alias".to_string(), v.clone());
+    }
+    if let Some(v) = &tv.store_file {
+        vars.insert("store_file".to_string(), v.clone());
+    }
+    vars
 }
 
 fn resolve_cmd(command: &str) -> Result<std::path::PathBuf> {
