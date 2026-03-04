@@ -8,6 +8,11 @@
 # Configurable workflow name for CI helpers (override in project justfile)
 ci_workflow := "release.yaml"
 
+# Tool prefix for external tool managers (e.g., "pixi run")
+_tool_prefix := ""
+# Python script runner (e.g., "uv run --script" or "pixi run python")
+_py := "uv run --script"
+
 # =============================================
 # Setup & Dependencies
 # =============================================
@@ -39,17 +44,17 @@ fix *ARGS:
 # Run on Android device (auto-detects first Android device)
 # Usage: just android [debug|release] [extra-flags...]
 android MODE='debug' *FLAGS:
-    DEVICE_ID=$(rust-script flutter_tools/flutter_select_device.rs --platform android); if [ -z "$DEVICE_ID" ]; then echo "No Android device found. Run: just devices" 1>&2; exit 1; fi; VERBOSE=""; if [ "{{MODE}}" = "debug" ]; then VERBOSE="--verbose"; fi; rust-script flutter_tools/cmd_run.rs --log=logs/flutter-android-{{MODE}}.log flutter run -d "$DEVICE_ID" --{{MODE}} $VERBOSE {{FLAGS}}
+    DEVICE_ID=$({{_tool_prefix}} rust-script flutter_tools/flutter_select_device.rs --platform android); if [ -z "$DEVICE_ID" ]; then echo "No Android device found. Run: just devices" 1>&2; exit 1; fi; VERBOSE=""; if [ "{{MODE}}" = "debug" ]; then VERBOSE="--verbose"; fi; {{_tool_prefix}} rust-script flutter_tools/cmd_run.rs --log=logs/flutter-android-{{MODE}}.log flutter run -d "$DEVICE_ID" --{{MODE}} $VERBOSE {{FLAGS}}
 
 # Run on Windows
 # Usage: just windows [debug|release] [extra-flags...]
 windows MODE='debug' *FLAGS:
-    VERBOSE=""; if [ "{{MODE}}" = "debug" ]; then VERBOSE="--verbose"; fi; rust-script flutter_tools/cmd_run.rs --log=logs/flutter-windows-{{MODE}}.log flutter run -d windows --{{MODE}} $VERBOSE {{FLAGS}}
+    VERBOSE=""; if [ "{{MODE}}" = "debug" ]; then VERBOSE="--verbose"; fi; {{_tool_prefix}} rust-script flutter_tools/cmd_run.rs --log=logs/flutter-windows-{{MODE}}.log flutter run -d windows --{{MODE}} $VERBOSE {{FLAGS}}
 
 # Run on iOS device
 # Usage: just ios [debug|release] [extra-flags...]
 ios MODE='debug' *FLAGS:
-    DEVICE_ID=$(rust-script flutter_tools/flutter_select_device.rs --platform ios); if [ -z "$DEVICE_ID" ]; then echo "No iOS device found. Run: just devices" 1>&2; exit 1; fi; VERBOSE=""; if [ "{{MODE}}" = "debug" ]; then VERBOSE="--verbose"; fi; rust-script flutter_tools/cmd_run.rs --log=logs/flutter-ios-{{MODE}}.log flutter run -d "$DEVICE_ID" --{{MODE}} $VERBOSE {{FLAGS}}
+    DEVICE_ID=$({{_tool_prefix}} rust-script flutter_tools/flutter_select_device.rs --platform ios); if [ -z "$DEVICE_ID" ]; then echo "No iOS device found. Run: just devices" 1>&2; exit 1; fi; VERBOSE=""; if [ "{{MODE}}" = "debug" ]; then VERBOSE="--verbose"; fi; {{_tool_prefix}} rust-script flutter_tools/cmd_run.rs --log=logs/flutter-ios-{{MODE}}.log flutter run -d "$DEVICE_ID" --{{MODE}} $VERBOSE {{FLAGS}}
 
 # List all connected devices
 devices *ARGS:
@@ -57,11 +62,11 @@ devices *ARGS:
 
 # Kill processes locking Android directory
 kill-android:
-    rust-script flutter_tools/kill_file_handles.rs android
+    {{_tool_prefix}} rust-script flutter_tools/kill_file_handles.rs android
 
 # Install and run the built release APK on Android (skips build)
 install-apk:
-    DEVICE_ID=$(rust-script flutter_tools/flutter_select_device.rs --platform android); if [ -z "$DEVICE_ID" ]; then echo "No Android device found." 1>&2; exit 1; fi; flutter run -d "$DEVICE_ID" --release --use-application-binary=build/app/outputs/flutter-apk/app-release.apk
+    DEVICE_ID=$({{_tool_prefix}} rust-script flutter_tools/flutter_select_device.rs --platform android); if [ -z "$DEVICE_ID" ]; then echo "No Android device found." 1>&2; exit 1; fi; flutter run -d "$DEVICE_ID" --release --use-application-binary=build/app/outputs/flutter-apk/app-release.apk
 
 # =============================================
 # Code Generation & Assets
@@ -69,28 +74,28 @@ install-apk:
 
 # Generate platform configuration from app.pkl
 gen-platforms *ARGS:
-    cargo run --manifest-path flutter_tools/flutter_gen_platforms/Cargo.toml -- {{ARGS}}
+    {{_tool_prefix}} cargo run --manifest-path flutter_tools/flutter_gen_platforms/Cargo.toml -- {{ARGS}}
 
 # Generate all image assets (branding first, then logos with launcher icons/splash)
 gen-assets:
-    uv run --script flutter_tools/flutter_gen_branding.py
-    uv run --script flutter_tools/flutter_gen_logo.py
+    {{_py}} flutter_tools/flutter_gen_branding.py
+    {{_py}} flutter_tools/flutter_gen_logo.py
 
 # Generate logo variants + apply to launcher icons/splash
 gen-logo *ARGS:
-    uv run --script flutter_tools/flutter_gen_logo.py {{ARGS}}
+    {{_py}} flutter_tools/flutter_gen_logo.py {{ARGS}}
 
 # Generate logo variants only (without applying to launcher icons)
 logo:
-    uv run --script flutter_tools/flutter_gen_logo.py --no-apply
+    {{_py}} flutter_tools/flutter_gen_logo.py --no-apply
 
 # Generate branding images (light and dark theme)
 gen-branding *ARGS:
-    uv run --script flutter_tools/flutter_gen_branding.py {{ARGS}}
+    {{_py}} flutter_tools/flutter_gen_branding.py {{ARGS}}
 
 # Generate Android release keystore (reads KEYSTORE_PASSWORD and KEY_PASSWORD env vars)
 gen-android-keystore *FLAGS:
-    rust-script flutter_tools/gen_android_keystore.rs {{FLAGS}}
+    {{_tool_prefix}} rust-script flutter_tools/gen_android_keystore.rs {{FLAGS}}
 
 # Upload signing secrets (keystore + passwords) to GitHub Actions
 upload-secrets:
@@ -99,11 +104,11 @@ upload-secrets:
     if [ -z "$KEYSTORE_PASSWORD" ]; then echo "Error: KEYSTORE_PASSWORD env var is not set" >&2; exit 1; fi; \
     if [ -z "$KEY_PASSWORD" ]; then echo "Error: KEY_PASSWORD env var is not set" >&2; exit 1; fi; \
     echo "Uploading KEYSTORE_BASE64..."; \
-    base64 -w 0 "$KS" | gh secret set KEYSTORE_BASE64; \
+    base64 -w 0 "$KS" | {{_tool_prefix}} gh secret set KEYSTORE_BASE64; \
     echo "Uploading KEYSTORE_PASSWORD..."; \
-    echo "$KEYSTORE_PASSWORD" | gh secret set KEYSTORE_PASSWORD; \
+    echo "$KEYSTORE_PASSWORD" | {{_tool_prefix}} gh secret set KEYSTORE_PASSWORD; \
     echo "Uploading KEY_PASSWORD..."; \
-    echo "$KEY_PASSWORD" | gh secret set KEY_PASSWORD; \
+    echo "$KEY_PASSWORD" | {{_tool_prefix}} gh secret set KEY_PASSWORD; \
     echo "Done."
 
 # Run Dart build_runner code generation
@@ -155,7 +160,7 @@ test-coverage *ARGS:
 # Build APK (release with obfuscation)
 # Usage: just build-apk [--verbose]
 build-apk *FLAGS:
-    rust-script flutter_tools/cmd_run.rs --log=logs/flutter-build.log flutter build apk --release --obfuscate --split-debug-info=build/app/outputs/symbols {{FLAGS}}
+    {{_tool_prefix}} rust-script flutter_tools/cmd_run.rs --log=logs/flutter-build.log flutter build apk --release --obfuscate --split-debug-info=build/app/outputs/symbols {{FLAGS}}
 
 # Build iOS app (release)
 build-ios *FLAGS:
@@ -167,15 +172,15 @@ build-ios *FLAGS:
 
 # Bump version in pubspec.yaml (major|minor|patch|build|revert)
 bump-version PART *FLAGS:
-    rust-script flutter_tools/bump_version.rs {{PART}} {{FLAGS}}
+    {{_tool_prefix}} rust-script flutter_tools/bump_version.rs {{PART}} {{FLAGS}}
 
 # Tag the current version in git (e.g. v1.2.3)
 tag-version *FLAGS:
-    rust-script flutter_tools/git_tag_version.rs {{FLAGS}}
+    {{_tool_prefix}} rust-script flutter_tools/git_tag_version.rs {{FLAGS}}
 
 # Generate changelog from git log using Claude AI
 gen-changelog *FLAGS:
-    rust-script flutter_tools/gen_changelog.rs {{FLAGS}}
+    {{_tool_prefix}} rust-script flutter_tools/gen_changelog.rs {{FLAGS}}
 
 # Bump version, commit, tag, and push to trigger CI release
 release PART='patch':
@@ -191,7 +196,7 @@ release PART='patch':
 
 # Check GitHub API rate limit status
 gh-rate-limit *FLAGS:
-    rust-script flutter_tools/gh_rate_limit.rs {{FLAGS}}
+    {{_tool_prefix}} rust-script flutter_tools/gh_rate_limit.rs {{FLAGS}}
 
 # =============================================
 # CI Helpers
@@ -199,16 +204,16 @@ gh-rate-limit *FLAGS:
 
 # Trigger CI workflow on a branch
 trigger-ci REF='main':
-    gh workflow run {{ci_workflow}} --ref {{REF}}
+    {{_tool_prefix}} gh workflow run {{ci_workflow}} --ref {{REF}}
 
 # Re-run the last failed CI workflow on GitHub
 rerun-ci:
-    gh run list --workflow={{ci_workflow}} --limit 1 --json databaseId --jq '.[0].databaseId' | xargs gh run rerun --failed
+    {{_tool_prefix}} gh run list --workflow={{ci_workflow}} --limit 1 --json databaseId --jq '.[0].databaseId' | xargs {{_tool_prefix}} gh run rerun --failed
 
 # Watch the latest CI run (streaming logs)
 watch-ci:
-    gh run watch "$(gh run list --workflow={{ci_workflow}} --limit 1 --json databaseId --jq '.[0].databaseId')" --exit-status
+    {{_tool_prefix}} gh run watch "$({{_tool_prefix}} gh run list --workflow={{ci_workflow}} --limit 1 --json databaseId --jq '.[0].databaseId')" --exit-status
 
 # View logs of the latest CI run (--log-failed for failures only)
 logs-ci *ARGS:
-    gh run view "$(gh run list --workflow={{ci_workflow}} --limit 1 --json databaseId --jq '.[0].databaseId')" --log {{ARGS}}
+    {{_tool_prefix}} gh run view "$({{_tool_prefix}} gh run list --workflow={{ci_workflow}} --limit 1 --json databaseId --jq '.[0].databaseId')" --log {{ARGS}}
