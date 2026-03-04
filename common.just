@@ -92,30 +92,10 @@ gen-branding *ARGS:
 gen-android-keystore *FLAGS:
     rust-script flutter_tools/gen_android_keystore.rs {{FLAGS}}
 
-# Print GitHub Actions secrets needed for CI signing
-show-secrets:
-    @PROPS="platforms/android/key.properties"; \
-    if [ ! -f "$PROPS" ]; then echo "Error: $PROPS not found" >&2; exit 1; fi; \
-    if [ ! -f "platforms/android/keystore.jks" ]; then echo "Error: keystore.jks not found" >&2; exit 1; fi; \
-    echo "=== GitHub Actions Secrets ==="; \
-    echo ""; \
-    echo "KEYSTORE_BASE64:"; \
-    base64 -w 0 platforms/android/keystore.jks && echo; \
-    echo ""; \
-    echo "KEYSTORE_PASSWORD:"; \
-    grep "^storePassword=" "$PROPS" | cut -d= -f2-; \
-    echo ""; \
-    echo "KEY_PASSWORD:"; \
-    grep "^keyPassword=" "$PROPS" | cut -d= -f2-; \
-    echo ""
-
-# Upload GitHub Actions secrets for Android signing via gh CLI
+# Upload signing passwords to GitHub Actions secrets via gh CLI
 upload-secrets:
     @PROPS="platforms/android/key.properties"; \
     if [ ! -f "$PROPS" ]; then echo "Error: $PROPS not found" >&2; exit 1; fi; \
-    if [ ! -f "platforms/android/keystore.jks" ]; then echo "Error: keystore.jks not found" >&2; exit 1; fi; \
-    echo "Uploading KEYSTORE_BASE64..."; \
-    base64 -w 0 platforms/android/keystore.jks | gh secret set KEYSTORE_BASE64; \
     echo "Uploading KEYSTORE_PASSWORD..."; \
     grep "^storePassword=" "$PROPS" | cut -d= -f2- | gh secret set KEYSTORE_PASSWORD; \
     echo "Uploading KEY_PASSWORD..."; \
