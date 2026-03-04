@@ -92,10 +92,14 @@ gen-branding *ARGS:
 gen-android-keystore *FLAGS:
     rust-script flutter_tools/gen_android_keystore.rs {{FLAGS}}
 
-# Upload KEYSTORE_PASSWORD and KEY_PASSWORD env vars to GitHub Actions secrets
+# Upload signing secrets (keystore + passwords) to GitHub Actions
 upload-secrets:
-    @if [ -z "$KEYSTORE_PASSWORD" ]; then echo "Error: KEYSTORE_PASSWORD env var is not set" >&2; exit 1; fi; \
+    @KS="platforms/android/keystore.jks"; \
+    if [ ! -f "$KS" ]; then echo "Error: $KS not found. Run: just gen-android-keystore" >&2; exit 1; fi; \
+    if [ -z "$KEYSTORE_PASSWORD" ]; then echo "Error: KEYSTORE_PASSWORD env var is not set" >&2; exit 1; fi; \
     if [ -z "$KEY_PASSWORD" ]; then echo "Error: KEY_PASSWORD env var is not set" >&2; exit 1; fi; \
+    echo "Uploading KEYSTORE_BASE64..."; \
+    base64 -w 0 "$KS" | gh secret set KEYSTORE_BASE64; \
     echo "Uploading KEYSTORE_PASSWORD..."; \
     echo "$KEYSTORE_PASSWORD" | gh secret set KEYSTORE_PASSWORD; \
     echo "Uploading KEY_PASSWORD..."; \
