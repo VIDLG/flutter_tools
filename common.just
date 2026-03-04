@@ -186,6 +186,14 @@ release PART='patch':
     git push && git push --tags
 
 # =============================================
+# GitHub Utilities
+# =============================================
+
+# Check GitHub API rate limit status
+gh-rate-limit *FLAGS:
+    rust-script flutter_tools/gh_rate_limit.rs {{FLAGS}}
+
+# =============================================
 # CI Helpers
 # =============================================
 
