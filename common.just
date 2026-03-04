@@ -94,22 +94,19 @@ gen-android-keystore *FLAGS:
 
 # Print GitHub Actions secrets needed for CI signing
 show-secrets:
-    #!/usr/bin/env sh
-    set -e
-    PROPS="platforms/android/key.properties"
-    if [ ! -f "$PROPS" ]; then echo "Error: $PROPS not found" >&2; exit 1; fi
-    if [ ! -f "platforms/android/keystore.jks" ]; then echo "Error: keystore.jks not found" >&2; exit 1; fi
-    get() { grep "^$1=" "$PROPS" | cut -d= -f2-; }
-    echo "=== GitHub Actions Secrets ==="
-    echo ""
-    echo "KEYSTORE_BASE64:"
-    base64 -w 0 platforms/android/keystore.jks && echo
-    echo ""
-    echo "KEYSTORE_PASSWORD:"
-    get storePassword
-    echo ""
-    echo "KEY_PASSWORD:"
-    get keyPassword
+    @PROPS="platforms/android/key.properties"; \
+    if [ ! -f "$PROPS" ]; then echo "Error: $PROPS not found" >&2; exit 1; fi; \
+    if [ ! -f "platforms/android/keystore.jks" ]; then echo "Error: keystore.jks not found" >&2; exit 1; fi; \
+    echo "=== GitHub Actions Secrets ==="; \
+    echo ""; \
+    echo "KEYSTORE_BASE64:"; \
+    base64 -w 0 platforms/android/keystore.jks && echo; \
+    echo ""; \
+    echo "KEYSTORE_PASSWORD:"; \
+    grep "^storePassword=" "$PROPS" | cut -d= -f2-; \
+    echo ""; \
+    echo "KEY_PASSWORD:"; \
+    grep "^keyPassword=" "$PROPS" | cut -d= -f2-; \
     echo ""
 
 # Run Dart build_runner code generation
