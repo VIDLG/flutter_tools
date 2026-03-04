@@ -118,13 +118,14 @@ watch:
 # Code Quality
 # =============================================
 
-# Analyze Dart code
+# Run Dart static analysis
 analyze *ARGS:
     flutter analyze {{ARGS}}
 
-# Run static analysis (alias for analyze)
-lint *ARGS:
-    flutter analyze {{ARGS}}
+# Run all static checks (override in project justfile to add frontend, etc.)
+lint:
+    just format-check
+    just analyze
 
 # Format Dart code
 format *ARGS:
