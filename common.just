@@ -109,6 +109,19 @@ show-secrets:
     grep "^keyPassword=" "$PROPS" | cut -d= -f2-; \
     echo ""
 
+# Upload GitHub Actions secrets for Android signing via gh CLI
+upload-secrets:
+    @PROPS="platforms/android/key.properties"; \
+    if [ ! -f "$PROPS" ]; then echo "Error: $PROPS not found" >&2; exit 1; fi; \
+    if [ ! -f "platforms/android/keystore.jks" ]; then echo "Error: keystore.jks not found" >&2; exit 1; fi; \
+    echo "Uploading KEYSTORE_BASE64..."; \
+    base64 -w 0 platforms/android/keystore.jks | gh secret set KEYSTORE_BASE64; \
+    echo "Uploading KEYSTORE_PASSWORD..."; \
+    grep "^storePassword=" "$PROPS" | cut -d= -f2- | gh secret set KEYSTORE_PASSWORD; \
+    echo "Uploading KEY_PASSWORD..."; \
+    grep "^keyPassword=" "$PROPS" | cut -d= -f2- | gh secret set KEY_PASSWORD; \
+    echo "Done."
+
 # Run Dart build_runner code generation
 generate *ARGS:
     dart run build_runner build --delete-conflicting-outputs {{ARGS}}
