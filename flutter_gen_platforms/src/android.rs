@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::config::AndroidConfig;
 
 /// Files to skip when copying from platforms/android/ to android/.
-const SKIP_FILES: &[&str] = &["keystore.jks", "key.properties.example"];
+const SKIP_FILES: &[&str] = &["keystore.jks"];
 
 /// File extensions that support `{{var}}` template substitution.
 const TEMPLATE_EXTENSIONS: &[&str] = &["kts", "xml", "properties"];

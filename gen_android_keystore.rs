@@ -2,23 +2,22 @@
 //! Generate Android Keystore
 //!
 //! Generates a new Android release keystore (.jks) by reading passwords
-//! from key.properties and key alias from app.pkl (via `pkl eval`).
+//! from environment variables and key alias from app.pkl (via `pkl eval`).
 //!
 //! ## What it does
-//! - Reads `storePassword`, `keyPassword` from key.properties
+//! - Reads `KEYSTORE_PASSWORD`, `KEY_PASSWORD` from environment variables
 //! - Reads `key_alias` from app.pkl via `pkl eval`
 //! - Runs `keytool` to generate a new RSA 2048-bit keystore valid for 100 years
 //! - Skips if keystore already exists (use --force to override)
 //!
 //! Usage:
-//!   rust-script gen_android_keystore.rs [--props PATH] [--output PATH] [--force]
+//!   rust-script gen_android_keystore.rs [--output PATH] [--force]
 //!   rust-script gen_android_keystore.rs --alias mykey
 //!
 //! ```cargo
 //! [dependencies]
 //! clap = { version = "4.4", features = ["derive"] }
 //! anyhow = "1.0"
-//! java-properties = "2.0"
 //! which = "8.0"
 //! ```
 
@@ -34,10 +33,6 @@ use std::process::Command;
     about = "Generate Android release keystore"
 )]
 struct Args {
-    /// Path to key.properties file
-    #[arg(long, default_value = "platforms/android/key.properties")]
-    props: PathBuf,
-
     /// Output path for the keystore file
     #[arg(long, default_value = "platforms/android/keystore.jks")]
     output: PathBuf,
@@ -88,31 +83,20 @@ fn read_alias_from_pkl(config_path: &std::path::Path) -> Result<String> {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Check key.properties exists
-    if !args.props.exists() {
-        bail!(
-            "{} not found.\nCopy key.properties.example to key.properties and fill in passwords.",
-            args.props.display()
-        );
+    // Read passwords from environment variables
+    let store_password =
+        std::env::var("KEYSTORE_PASSWORD").context("KEYSTORE_PASSWORD env var is not set")?;
+    if store_password.is_empty() {
+        bail!("KEYSTORE_PASSWORD env var is empty");
+    }
+    let key_password =
+        std::env::var("KEY_PASSWORD").context("KEY_PASSWORD env var is not set")?;
+    if key_password.is_empty() {
+        bail!("KEY_PASSWORD env var is empty");
     }
 
     // Check keytool is available
     let keytool = which::which("keytool").context("keytool not found in PATH. Install a JDK.")?;
-
-    // Read passwords from key.properties
-    let file = fs::File::open(&args.props)
-        .with_context(|| format!("Failed to read {}", args.props.display()))?;
-    let props = java_properties::read(std::io::BufReader::new(file))
-        .with_context(|| format!("Failed to parse {}", args.props.display()))?;
-
-    let store_password = props
-        .get("storePassword")
-        .filter(|s| !s.is_empty())
-        .context("storePassword is missing or empty in key.properties")?;
-    let key_password = props
-        .get("keyPassword")
-        .filter(|s| !s.is_empty())
-        .context("keyPassword is missing or empty in key.properties")?;
 
     // Read alias: CLI flag > app.pkl
     let key_alias = match &args.alias {
@@ -157,9 +141,9 @@ fn main() -> Result<()> {
             "-alias",
             &key_alias,
             "-storepass",
-            store_password,
+            &store_password,
             "-keypass",
-            key_password,
+            &key_password,
             "-dname",
             &args.dname,
         ])

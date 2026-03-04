@@ -88,18 +88,18 @@ logo:
 gen-branding *ARGS:
     uv run --script flutter_tools/flutter_gen_branding.py {{ARGS}}
 
-# Generate Android release keystore from key.properties
+# Generate Android release keystore (reads KEYSTORE_PASSWORD and KEY_PASSWORD env vars)
 gen-android-keystore *FLAGS:
     rust-script flutter_tools/gen_android_keystore.rs {{FLAGS}}
 
-# Upload signing passwords to GitHub Actions secrets via gh CLI
+# Upload KEYSTORE_PASSWORD and KEY_PASSWORD env vars to GitHub Actions secrets
 upload-secrets:
-    @PROPS="platforms/android/key.properties"; \
-    if [ ! -f "$PROPS" ]; then echo "Error: $PROPS not found" >&2; exit 1; fi; \
+    @if [ -z "$KEYSTORE_PASSWORD" ]; then echo "Error: KEYSTORE_PASSWORD env var is not set" >&2; exit 1; fi; \
+    if [ -z "$KEY_PASSWORD" ]; then echo "Error: KEY_PASSWORD env var is not set" >&2; exit 1; fi; \
     echo "Uploading KEYSTORE_PASSWORD..."; \
-    grep "^storePassword=" "$PROPS" | cut -d= -f2- | gh secret set KEYSTORE_PASSWORD; \
+    echo "$KEYSTORE_PASSWORD" | gh secret set KEYSTORE_PASSWORD; \
     echo "Uploading KEY_PASSWORD..."; \
-    grep "^keyPassword=" "$PROPS" | cut -d= -f2- | gh secret set KEY_PASSWORD; \
+    echo "$KEY_PASSWORD" | gh secret set KEY_PASSWORD; \
     echo "Done."
 
 # Run Dart build_runner code generation
